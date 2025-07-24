@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>准考证查询系统</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>准考证查询系统</h1>
+        <form id="query-form">
+            <div class="form-group">
+                <label for="name">学生姓名</label>
+                <input type="text" id="name" name="name" required>
+            </div>
+            <div class="form-group">
+                <label for="id">身份证号</label>
+                <input type="text" id="id" name="id" required>
+            </div>
+            <button type="submit" id="query-btn">查询</button>
+        </form>
+    </div>
+
+    <!-- 弹窗 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <p id="modal-message"></p>
+            <button id="modal-close">知道了</button>
+        </div>
+    </div>
+
+    <script src="/assets/js/main.js"></script>
+</body>
+</html>
