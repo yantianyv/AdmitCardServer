@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,6 +91,11 @@ func main() {
 			return
 		}
 		
+		// 设置动态下载文件名（兼容Firefox）
+		_, fileName := filepath.Split(filePath)
+		c.Header("Content-Disposition", `attachment; filename*=UTF-8''`+url.PathEscape(fileName))
+		c.Header("Content-Type", "application/pdf")
+		c.Header("X-Content-Type-Options", "nosniff")
 		c.File(filePath)
 	})
 
