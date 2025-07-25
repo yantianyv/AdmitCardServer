@@ -1,0 +1,31 @@
+{
+  "exam_name": "示例考试",
+  "exam_location": "示例考试地点",
+  "exam_schedule": [
+    {
+      "subject": "语文",
+      "time": "暂定"
+    },
+    {
+      "subject": "数学",
+      "time": "暂定"
+    },
+    {
+      "subject": "英语",
+      "time": "暂定"
+    },
+    {
+      "subject": "物理",
+      "time": "暂定"
+    },
+    {
+      "subject": "化学",
+      "time": "暂定"
+    }
+  ],
+  "exam_notes": [
+    "请携带身份证和准考证参加考试",
+    "提前30分钟到达考场",
+    "禁止携带手机等电子设备"
+  ]
+}
