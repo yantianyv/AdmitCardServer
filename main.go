@@ -96,7 +96,7 @@ func main() {
 		
 		// 5. 返回成功响应
 		c.JSON(http.StatusOK, QueryResponse{
-			Message: fmt.Sprintf("查询到%s的准考证，已自动开始下载。", req.Name),
+			Message: fmt.Sprintf("查询到%s的准考证，即将自动下载。", req.Name),
 			FileURL: fmt.Sprintf("/download?path=%s&token=%s", url.QueryEscape(filePath), token),
 			Token:   token,
 		})
@@ -114,7 +114,6 @@ func main() {
 		
 		// 验证令牌
 		if !validateToken(token, filePath) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "无效或过期的下载令牌"})
 			return
 		}
 		
