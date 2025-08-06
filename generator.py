@@ -11,6 +11,15 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus.flowables import Flowable, HRFlowable
 
+# 默认配置模板
+default_config = {
+    "exam_name": "默认考试",
+    "exam_location": "默认考试地点",
+    "settings": {"render_photo_frame": True},
+    "exam_schedule": [{"subject": "科目", "time": "时间"}],
+    "exam_notes": ["注意事项"],
+}
+
 # 定义一个Flowable类，用于绘制带有文本的矩形框
 class PhotoBox(Flowable):
     def __init__(self, width, height, text=""):
@@ -31,18 +40,9 @@ class PhotoBox(Flowable):
 # 加载配置文件
 def load_config(config_name="default"):
     config_path = os.path.join("config", f"{config_name}.json")
-    
-    # 默认配置模板
-    default_config = {
-        "exam_name": "默认考试",
-        "exam_location": "默认考试地点",
-        "settings": {
-            "render_photo_frame": True
-        },
-        "exam_schedule": [{"subject": "科目", "time": "时间"}],
-        "exam_notes": ["注意事项"]
-    }
-    
+
+    global default_config
+
     if not os.path.exists(config_path):
         # 创建配置文件目录
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
@@ -52,7 +52,7 @@ def load_config(config_name="default"):
         # 用黄色字体输出警告
         print("\033[1;33m警告：配置文件不存在，已生成默认配置文件。\033[0m")
         return default_config
-    
+
     with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -210,21 +210,44 @@ def main():
     # 确保必要目录存在
     os.makedirs("config", exist_ok=True)
     os.makedirs("AdmitCards", exist_ok=True)
-    
-    parser = argparse.ArgumentParser(description="准考证生成器")
+
+    if not os.path.exists(os.path.join("config", "default.json")):
+        # 创建配置文件目录
+        os.makedirs(
+            os.path.dirname(os.path.join("config", "default.json")), exist_ok=True
+        )
+        # 生成默认配置文件
+        with open(os.path.join("config", "default.json"), "w", encoding="utf-8") as f:
+            json.dump(default_config, f, indent=2, ensure_ascii=False)
+        # 用黄色字体输出警告
+        print("\033[1;33m初次使用，已帮您生成默认配置文件，请修改后再次启动\033[0m")
+        return default_config
+
+    # 自定义错误处理类
+    class CustomArgumentParser(argparse.ArgumentParser):
+        def error(self, message):
+            if "the following arguments are required" in message:
+                print("请指定考生信息Excel文件路径")
+                self.exit(2)
+            else:
+                super().error(message)
+
+    parser = CustomArgumentParser(description="准考证生成器", add_help=False)
     parser.add_argument("excel_file", help="考生信息Excel文件路径")
     parser.add_argument("-c", "--config", default="default", help="配置文件名（不带.json扩展名）")
+    parser.add_argument("-h", "--help", action="help", help="显示帮助信息并退出")
+
     args = parser.parse_args()
-    
+
     try:
         # 加载配置（会自动创建默认配置）
         config = load_config(args.config)
-        
+
         # 检查是否有Excel文件参数
         if not hasattr(args, 'excel_file') or not args.excel_file:
             print("请指定考生信息Excel文件路径")
             return
-            
+
         students = read_excel_data(args.excel_file)
         for student in students:
             generate_admit_card(student, config)
