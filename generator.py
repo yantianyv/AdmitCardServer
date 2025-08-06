@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sys
 from openpyxl import load_workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -249,9 +250,18 @@ def main():
             return
 
         students = read_excel_data(args.excel_file)
-        for student in students:
+        total = len(students)
+        print(f"开始生成{total}份准考证...")
+
+        for i, student in enumerate(students, 1):
             generate_admit_card(student, config)
-        print(f"成功生成{len(students)}份准考证到AdmitCards目录")
+            progress = int(i / total * 100)
+            # 生成字符进度条 (20个字符长度)
+            progress_bar = "#" * (progress // 5) + "_" * (20 - progress // 5)
+            sys.stdout.write(f"\r进度: {progress_bar} {progress}% ({i}/{total})")
+            sys.stdout.flush()
+
+        print(f"\n成功生成{total}份准考证到AdmitCards目录")
     except Exception as e:
         print(f"错误: {str(e)}")
         if isinstance(e, FileNotFoundError) and str(e).endswith(".json not found"):
