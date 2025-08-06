@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,11 +20,24 @@ type QueryRequest struct {
 	ID   string `json:"id" binding:"required"`
 }
 
+// 令牌结构
+type DownloadToken struct {
+	Token    string
+	FilePath string
+	Expire   time.Time
+}
+
 // 查询响应
 type QueryResponse struct {
 	Message string `json:"message"`
 	FileURL string `json:"file_url,omitempty"`
+	Token   string `json:"token,omitempty"`
 }
+
+var (
+	tokenStore = &sync.Map{}
+	tokenMutex = &sync.Mutex{}
+)
 
 // IP访问记录
 type accessRecord struct {
@@ -70,18 +84,30 @@ func main() {
 			return
 		}
 
-		// 4. 返回成功响应
+		// 4. 生成下载令牌
+		token := generateToken(filePath)
+		
+		// 5. 返回成功响应
 		c.JSON(http.StatusOK, QueryResponse{
 			Message: fmt.Sprintf("查询到%s的准考证，已自动开始下载。", req.Name),
-			FileURL: "/download?path=" + filePath,
+			FileURL: fmt.Sprintf("/download?path=%s&token=%s", url.QueryEscape(filePath), token),
+			Token:   token,
 		})
 	})
 	
 	// 文件下载路由
 	r.GET("/download", func(c *gin.Context) {
 		filePath := c.Query("path")
+		token := c.Query("token")
+		
 		if filePath == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少文件路径参数"})
+			return
+		}
+		
+		// 验证令牌
+		if !validateToken(token, filePath) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无效或过期的下载令牌"})
 			return
 		}
 		
@@ -144,6 +170,61 @@ func checkRateLimit(ip string) error {
 	// 添加新记录
 	ar.timestamps = append(ar.timestamps, now)
 	return nil
+}
+
+// 生成下载令牌
+func generateToken(filePath string) string {
+	token := uuid.New().String()
+	expire := time.Now().Add(5 * time.Minute)
+	
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+	
+	tokenStore.Store(token, DownloadToken{
+		Token:    token,
+		FilePath: filePath,
+		Expire:   expire,
+	})
+	
+	return token
+}
+
+// 验证下载令牌
+func validateToken(token, filePath string) bool {
+	if token == "" {
+		fmt.Println("验证失败: 空令牌")
+		return false
+	}
+	
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+	
+	// 获取令牌
+	val, ok := tokenStore.Load(token)
+	if !ok {
+		fmt.Printf("验证失败: 令牌不存在 %s\n", token)
+		return false
+	}
+	
+	dt := val.(DownloadToken)
+	
+	// 检查令牌是否过期
+	if time.Now().After(dt.Expire) {
+		fmt.Printf("验证失败: 令牌过期 %s (过期时间: %v)\n", token, dt.Expire)
+		tokenStore.Delete(token)
+		return false
+	}
+	
+	// 检查文件路径是否匹配
+	if dt.FilePath != filePath {
+		fmt.Printf("验证失败: 文件路径不匹配 (令牌路径: %s, 请求路径: %s)\n", dt.FilePath, filePath)
+		return false
+	}
+	
+	// 验证通过后删除令牌(一次性使用)
+	tokenStore.Delete(token)
+	fmt.Printf("验证成功: 令牌 %s 用于文件 %s\n", token, filePath)
+	return true
 }
 
 // 清理过期记录
