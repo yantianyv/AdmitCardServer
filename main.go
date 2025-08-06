@@ -1,10 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/csv"
 	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // 查询请求参数
@@ -55,7 +59,19 @@ func main() {
 	startCleanupTask()
 	defer cleanupTicker.Stop()
 
+	// 初始化日志系统
+	logFile := initLogFile()
+	defer logFile.Close()
+	logWriter := csv.NewWriter(logFile)
+	defer logWriter.Flush()
+
+	// 启动日志清理定时任务
+	go startLogCleanupTask()
+
 	r := gin.Default()
+
+	// 添加日志中间件
+	r.Use(loggingMiddleware(logWriter))
 
 	// 静态文件服务
 	r.Static("/assets", "./assets")
@@ -279,6 +295,136 @@ func cleanExpiredRecords(records []time.Time, now time.Time) []time.Time {
 		}
 	}
 	return valid
+}
+
+// 初始化日志文件
+func initLogFile() *os.File {
+	today := time.Now().Format("2006-01-02")
+	logPath := filepath.Join("log", today+".csv")
+	
+	// 确保log目录存在
+	if err := os.MkdirAll("log", 0755); err != nil {
+		panic(fmt.Sprintf("无法创建日志目录: %v", err))
+	}
+	
+	// 创建文件(如果不存在)
+	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		panic(fmt.Sprintf("无法创建日志文件: %v", err))
+	}
+
+	// 如果是新文件，写入CSV头
+	if stat, _ := file.Stat(); stat.Size() == 0 {
+		writer := csv.NewWriter(file)
+		writer.Write([]string{"timestamp", "ip", "method", "path", "status", "latency", "name", "id", "user_agent"})
+		writer.Flush()
+	}
+
+	return file
+}
+
+// 日志中间件
+func loggingMiddleware(writer *csv.Writer) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 只记录关键路由
+		if c.Request.URL.Path != "/query" && c.Request.URL.Path != "/download" {
+			c.Next()
+			return
+		}
+
+		// 先读取请求体再处理请求
+		var name, id string
+		if c.Request.URL.Path == "/query" {
+			bodyBytes, _ := io.ReadAll(c.Request.Body)
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+			
+			var req QueryRequest
+			if c.ShouldBindJSON(&req) == nil {
+				name = req.Name
+				id = req.ID
+			}
+			
+			// 恢复请求体
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		}
+
+		start := time.Now()
+		c.Next()
+		
+		latency := time.Since(start)
+		status := c.Writer.Status()
+		
+		// 获取/download路由的学生信息
+		if c.Request.URL.Path == "/download" {
+			// 从下载路径解析ID
+			filePath := c.Query("path")
+			if filePath != "" {
+				base := filepath.Base(filePath)
+				parts := strings.SplitN(base, "-", 2)
+				if len(parts) == 2 {
+					id = parts[0]
+					name = strings.TrimSuffix(parts[1], ".pdf")
+				}
+			}
+		}
+		
+		record := []string{
+			time.Now().Format(time.RFC3339),
+			c.ClientIP(),
+			c.Request.Method,
+			c.Request.URL.Path,
+			fmt.Sprintf("%d", status),
+			latency.String(),
+			name,
+			id,
+			c.Request.UserAgent(),
+		}
+		
+		writer.Write(record)
+		writer.Flush()
+	}
+}
+
+// 启动日志清理定时任务
+func startLogCleanupTask() {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	
+	for range ticker.C {
+		cleanOldLogs()
+	}
+}
+
+// 清理90天前的日志
+func cleanOldLogs() {
+	files, err := os.ReadDir("log")
+	if err != nil {
+		return
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -90)
+	
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		
+		// 解析文件名中的日期
+		name := file.Name()
+		if len(name) < 10 {
+			continue
+		}
+		dateStr := name[:10]
+		
+		fileTime, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			continue
+		}
+		
+		if fileTime.Before(cutoff) {
+			os.Remove(filepath.Join("log", name))
+		}
+	}
 }
 
 // 检查各种限制
