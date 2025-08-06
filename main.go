@@ -39,11 +39,16 @@ type QueryResponse struct {
 }
 
 var (
-	tokenStore   = &sync.Map{}
-	tokenMutex   = &sync.Mutex{}
-	fileCache    = &sync.Map{} // 文件查找缓存
-	cacheMutex   = &sync.Mutex{}
+	tokenStore    = &sync.Map{}
+	tokenMutex    = &sync.Mutex{}
+	fileCache     = &sync.Map{} // 文件查找缓存
+	cacheMutex    = &sync.Mutex{}
 	cleanupTicker *time.Ticker // 定时清理器
+
+	logFile        *os.File    // 日志文件
+	logWriter      *csv.Writer // CSV写入器
+	logMutex       sync.Mutex  // 日志文件互斥锁
+	currentLogDate string      // 当前日志文件日期
 )
 
 // IP访问记录
@@ -60,9 +65,9 @@ func main() {
 	defer cleanupTicker.Stop()
 
 	// 初始化日志系统
-	logFile := initLogFile()
+	logFile = initLogFile()
 	defer logFile.Close()
-	logWriter := csv.NewWriter(logFile)
+	logWriter = csv.NewWriter(logFile)
 	defer logWriter.Flush()
 
 	// 启动日志清理定时任务
@@ -71,7 +76,7 @@ func main() {
 	r := gin.Default()
 
 	// 添加日志中间件
-	r.Use(loggingMiddleware(logWriter))
+	r.Use(loggingMiddleware())
 
 	// 静态文件服务
 	r.Static("/assets", "./assets")
@@ -109,7 +114,7 @@ func main() {
 
 		// 4. 生成下载令牌
 		token := generateToken(filePath)
-		
+
 		// 5. 返回成功响应
 		c.JSON(http.StatusOK, QueryResponse{
 			Message: fmt.Sprintf("查询到%s的准考证，即将自动下载。", req.Name),
@@ -117,28 +122,28 @@ func main() {
 			Token:   token,
 		})
 	})
-	
+
 	// 文件下载路由
 	r.GET("/download", func(c *gin.Context) {
 		filePath := c.Query("path")
 		token := c.Query("token")
-		
+
 		if filePath == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少文件路径参数"})
 			return
 		}
-		
+
 		// 验证令牌
 		if !validateToken(token, filePath) {
 			return
 		}
-		
+
 		// 安全检查：确保文件在AdmitCards目录下
 		if !strings.HasPrefix(filepath.Clean(filePath), "AdmitCards"+string(filepath.Separator)) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "非法文件路径"})
 			return
 		}
-		
+
 		// 设置动态下载文件名（兼容Firefox）
 		_, fileName := filepath.Split(filePath)
 		c.Header("Content-Disposition", `attachment; filename*=UTF-8''`+url.PathEscape(fileName))
@@ -163,14 +168,14 @@ func normalizeName(name string) string {
 func findAdmitCard(id, name string) (string, error) {
 	// 生成缓存键
 	cacheKey := fmt.Sprintf("%s-%s", id, normalizeName(name))
-	
+
 	// 检查缓存
 	if val, ok := fileCache.Load(cacheKey); ok {
 		if filePath, ok := val.(string); ok {
 			return filePath, nil
 		}
 	}
-	
+
 	// 查找文件
 	targetFile := fmt.Sprintf("%s-%s.pdf", id, normalizeName(name))
 	filePath := filepath.Join("AdmitCards", targetFile)
@@ -211,7 +216,7 @@ func checkRateLimit(ip string) error {
 	defer ar.mu.Unlock()
 
 	now := time.Now()
-	
+
 	// 清理过期记录
 	ar.timestamps = cleanExpiredRecords(ar.timestamps, now)
 
@@ -229,16 +234,16 @@ func checkRateLimit(ip string) error {
 func generateToken(filePath string) string {
 	token := uuid.New().String()
 	expire := time.Now().Add(5 * time.Minute)
-	
+
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
-	
+
 	tokenStore.Store(token, DownloadToken{
 		Token:    token,
 		FilePath: filePath,
 		Expire:   expire,
 	})
-	
+
 	return token
 }
 
@@ -248,10 +253,10 @@ func validateToken(token, filePath string) bool {
 		fmt.Printf("验证失败: 空令牌 (请求文件: %s)\n", filePath)
 		return false
 	}
-	
+
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
-	
+
 	// 获取令牌
 	val, ok := tokenStore.Load(token)
 	if !ok {
@@ -264,22 +269,22 @@ func validateToken(token, filePath string) bool {
 		fmt.Printf("验证失败: 令牌不存在 %s (存储的令牌: %v, 请求文件: %s)\n", token, storedTokens, filePath)
 		return false
 	}
-	
+
 	dt := val.(DownloadToken)
-	
+
 	// 检查令牌是否过期
 	if time.Now().After(dt.Expire) {
 		fmt.Printf("验证失败: 令牌过期 %s (过期时间: %v)\n", token, dt.Expire)
 		tokenStore.Delete(token)
 		return false
 	}
-	
+
 	// 检查文件路径是否匹配
 	if dt.FilePath != filePath {
 		fmt.Printf("验证失败: 文件路径不匹配 (令牌路径: %s, 请求路径: %s)\n", dt.FilePath, filePath)
 		return false
 	}
-	
+
 	// 验证通过后删除令牌(一次性使用)
 	tokenStore.Delete(token)
 	fmt.Printf("验证成功: 令牌 %s 用于文件 %s\n", token, filePath)
@@ -301,12 +306,12 @@ func cleanExpiredRecords(records []time.Time, now time.Time) []time.Time {
 func initLogFile() *os.File {
 	today := time.Now().Format("2006-01-02")
 	logPath := filepath.Join("log", today+".csv")
-	
+
 	// 确保log目录存在
 	if err := os.MkdirAll("log", 0755); err != nil {
 		panic(fmt.Sprintf("无法创建日志目录: %v", err))
 	}
-	
+
 	// 创建文件(如果不存在)
 	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -320,11 +325,35 @@ func initLogFile() *os.File {
 		writer.Flush()
 	}
 
+	currentLogDate = today
 	return file
 }
 
+// 检查并切换日志文件
+func checkAndRotateLogFile() error {
+	logMutex.Lock()
+	defer logMutex.Unlock()
+
+	today := time.Now().Format("2006-01-02")
+	if today == currentLogDate {
+		return nil
+	}
+
+	// 关闭旧文件
+	if logFile != nil {
+		logWriter.Flush()
+		logFile.Close()
+	}
+
+	// 创建新文件
+	newFile := initLogFile()
+	logFile = newFile
+	logWriter = csv.NewWriter(logFile)
+	return nil
+}
+
 // 日志中间件
-func loggingMiddleware(writer *csv.Writer) gin.HandlerFunc {
+func loggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 只记录关键路由
 		if c.Request.URL.Path != "/query" && c.Request.URL.Path != "/download" {
@@ -332,28 +361,35 @@ func loggingMiddleware(writer *csv.Writer) gin.HandlerFunc {
 			return
 		}
 
+		// 检查并切换日志文件
+		if err := checkAndRotateLogFile(); err != nil {
+			fmt.Printf("日志文件切换失败: %v\n", err)
+		} else {
+			fmt.Printf("当前日志日期: %s\n", currentLogDate)
+		}
+
 		// 先读取请求体再处理请求
 		var name, id string
 		if c.Request.URL.Path == "/query" {
 			bodyBytes, _ := io.ReadAll(c.Request.Body)
 			c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-			
+
 			var req QueryRequest
 			if c.ShouldBindJSON(&req) == nil {
 				name = req.Name
 				id = req.ID
 			}
-			
+
 			// 恢复请求体
 			c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		}
 
 		start := time.Now()
 		c.Next()
-		
+
 		latency := time.Since(start)
 		status := c.Writer.Status()
-		
+
 		// 获取/download路由的学生信息
 		if c.Request.URL.Path == "/download" {
 			// 从下载路径解析ID
@@ -367,7 +403,7 @@ func loggingMiddleware(writer *csv.Writer) gin.HandlerFunc {
 				}
 			}
 		}
-		
+
 		record := []string{
 			time.Now().Format(time.RFC3339),
 			c.ClientIP(),
@@ -379,9 +415,9 @@ func loggingMiddleware(writer *csv.Writer) gin.HandlerFunc {
 			id,
 			c.Request.UserAgent(),
 		}
-		
-		writer.Write(record)
-		writer.Flush()
+
+		logWriter.Write(record)
+		logWriter.Flush()
 	}
 }
 
@@ -389,7 +425,7 @@ func loggingMiddleware(writer *csv.Writer) gin.HandlerFunc {
 func startLogCleanupTask() {
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		cleanOldLogs()
 	}
@@ -403,24 +439,24 @@ func cleanOldLogs() {
 	}
 
 	cutoff := time.Now().AddDate(0, 0, -90)
-	
+
 	for _, file := range files {
 		if file.IsDir() {
 			continue
 		}
-		
+
 		// 解析文件名中的日期
 		name := file.Name()
 		if len(name) < 10 {
 			continue
 		}
 		dateStr := name[:10]
-		
+
 		fileTime, err := time.Parse("2006-01-02", dateStr)
 		if err != nil {
 			continue
 		}
-		
+
 		if fileTime.Before(cutoff) {
 			os.Remove(filepath.Join("log", name))
 		}
