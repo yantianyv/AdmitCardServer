@@ -31,8 +31,26 @@ class PhotoBox(Flowable):
 # 加载配置文件
 def load_config(config_name="default"):
     config_path = os.path.join("config", f"{config_name}.json")
+    
+    # 默认配置模板
+    default_config = {
+        "exam_name": "默认考试",
+        "exam_location": "默认考试地点",
+        "settings": {
+            "render_photo_frame": True
+        },
+        "exam_schedule": [{"subject": "科目", "time": "时间"}],
+        "exam_notes": ["注意事项"]
+    }
+    
     if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file {config_path} not found")
+        # 创建配置文件目录
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        # 生成默认配置文件
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(default_config, f, indent=2, ensure_ascii=False)
+        return default_config
+    
     with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -114,12 +132,21 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
         info_elements.append(Paragraph(f"<b>{header}:</b> {field}", styles["Normal"]))
         info_elements.append(Spacer(1, 0.5*cm))  # 增加上下间距
     
-    # 将第一部分放入带边框的Table
-    part1_table = Table([
-        [info_elements, PhotoBox(2.5*cm, 3.5*cm, "一寸照片粘贴处"), None]  # 添加None作为新的列
-    ], colWidths=[10*cm, 3*cm, 1*cm])  # 调整第二列的宽度，并设置新列的宽度为1cm
+    # 获取照片框渲染设置
+    render_photo = config["settings"]["render_photo_frame"]
+    
+    # 根据设置构建表格
+    if render_photo:
+        part1_table = Table([
+            [info_elements, PhotoBox(2.5*cm, 3.5*cm, "一寸照片粘贴处"), None]
+        ], colWidths=[10*cm, 3*cm, 1*cm])
+    else:
+        part1_table = Table([
+            [info_elements, None]
+        ], colWidths=[13*cm, 1*cm])
+        
     part1_table.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),  # 修改此处为垂直居中
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
         ("ALIGN", (1,0), (1,0), "RIGHT"),
         ("BOX", (0,0), (-1,-1), 1, colors.HexColor("#4a86e8")),
         ("PADDING", (0,0), (-1,-1), 16),

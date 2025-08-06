@@ -1,5 +1,5 @@
 
 *.xlsx
 *.xls
-*.json !default.json
+*.json
 *.pdf
