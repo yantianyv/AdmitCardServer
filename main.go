@@ -35,8 +35,11 @@ type QueryResponse struct {
 }
 
 var (
-	tokenStore = &sync.Map{}
-	tokenMutex = &sync.Mutex{}
+	tokenStore   = &sync.Map{}
+	tokenMutex   = &sync.Mutex{}
+	fileCache    = &sync.Map{} // 文件查找缓存
+	cacheMutex   = &sync.Mutex{}
+	cleanupTicker *time.Ticker // 定时清理器
 )
 
 // IP访问记录
@@ -48,6 +51,10 @@ type accessRecord struct {
 var ipRecords = &sync.Map{}
 
 func main() {
+	// 启动定时清理任务
+	startCleanupTask()
+	defer cleanupTicker.Stop()
+
 	r := gin.Default()
 
 	// 静态文件服务
@@ -139,14 +146,45 @@ func normalizeName(name string) string {
 
 // 查找准考证文件
 func findAdmitCard(id, name string) (string, error) {
-	normalizedName := normalizeName(name)
-	targetFile := fmt.Sprintf("%s-%s.pdf", id, normalizedName)
+	// 生成缓存键
+	cacheKey := fmt.Sprintf("%s-%s", id, normalizeName(name))
 	
+	// 检查缓存
+	if val, ok := fileCache.Load(cacheKey); ok {
+		if filePath, ok := val.(string); ok {
+			return filePath, nil
+		}
+	}
+	
+	// 查找文件
+	targetFile := fmt.Sprintf("%s-%s.pdf", id, normalizeName(name))
 	filePath := filepath.Join("AdmitCards", targetFile)
 	if _, err := os.Stat(filePath); err == nil {
+		// 存入缓存(5分钟有效期)
+		fileCache.Store(cacheKey, filePath)
+		time.AfterFunc(5*time.Minute, func() {
+			fileCache.Delete(cacheKey)
+		})
 		return filePath, nil
 	}
 	return "", errors.New("file not found")
+}
+
+// 启动定时清理任务
+func startCleanupTask() {
+	cleanupTicker = time.NewTicker(30 * time.Minute)
+	go func() {
+		for range cleanupTicker.C {
+			// 清理过期令牌
+			tokenStore.Range(func(key, value interface{}) bool {
+				token := value.(DownloadToken)
+				if time.Now().After(token.Expire) {
+					tokenStore.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
 }
 
 // 检查频率限制
@@ -192,7 +230,7 @@ func generateToken(filePath string) string {
 // 验证下载令牌
 func validateToken(token, filePath string) bool {
 	if token == "" {
-		fmt.Println("验证失败: 空令牌")
+		fmt.Printf("验证失败: 空令牌 (请求文件: %s)\n", filePath)
 		return false
 	}
 	
@@ -202,7 +240,13 @@ func validateToken(token, filePath string) bool {
 	// 获取令牌
 	val, ok := tokenStore.Load(token)
 	if !ok {
-		fmt.Printf("验证失败: 令牌不存在 %s\n", token)
+		// 打印当前存储的所有令牌用于调试
+		var storedTokens []string
+		tokenStore.Range(func(key, value interface{}) bool {
+			storedTokens = append(storedTokens, key.(string))
+			return true
+		})
+		fmt.Printf("验证失败: 令牌不存在 %s (存储的令牌: %v, 请求文件: %s)\n", token, storedTokens, filePath)
 		return false
 	}
 	
