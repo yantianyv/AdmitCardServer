@@ -49,6 +49,8 @@ def load_config(config_name="default"):
         # 生成默认配置文件
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(default_config, f, indent=2, ensure_ascii=False)
+        # 用黄色字体输出警告
+        print("\033[1;33m警告：配置文件不存在，已生成默认配置文件。\033[0m")
         return default_config
     
     with open(config_path, "r", encoding="utf-8") as f:
@@ -205,20 +207,32 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
 
 # 主函数
 def main():
+    # 确保必要目录存在
+    os.makedirs("config", exist_ok=True)
+    os.makedirs("AdmitCards", exist_ok=True)
+    
     parser = argparse.ArgumentParser(description="准考证生成器")
     parser.add_argument("excel_file", help="考生信息Excel文件路径")
     parser.add_argument("-c", "--config", default="default", help="配置文件名（不带.json扩展名）")
     args = parser.parse_args()
     
     try:
+        # 加载配置（会自动创建默认配置）
         config = load_config(args.config)
+        
+        # 检查是否有Excel文件参数
+        if not hasattr(args, 'excel_file') or not args.excel_file:
+            print("请指定考生信息Excel文件路径")
+            return
+            
         students = read_excel_data(args.excel_file)
-        os.makedirs("AdmitCards", exist_ok=True)
         for student in students:
             generate_admit_card(student, config)
         print(f"成功生成{len(students)}份准考证到AdmitCards目录")
     except Exception as e:
         print(f"错误: {str(e)}")
+        if isinstance(e, FileNotFoundError) and str(e).endswith(".json not found"):
+            print("已自动创建默认配置文件，请按需修改后重新运行程序")
 
 if __name__ == "__main__":
     main()
