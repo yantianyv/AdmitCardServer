@@ -144,11 +144,17 @@ func main() {
 			return
 		}
 
-		// 设置动态下载文件名（兼容Firefox）
+		// 设置下载响应头（兼容所有浏览器和手机）
 		_, fileName := filepath.Split(filePath)
-		c.Header("Content-Disposition", `attachment; filename*=UTF-8''`+url.PathEscape(fileName))
+		c.Header("Content-Disposition", `attachment; filename="`+fileName+`"; filename*=UTF-8''`+url.PathEscape(fileName))
 		c.Header("Content-Type", "application/pdf")
 		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Cache-Control", "no-store")  // 防止缓存
+		c.Header("Pragma", "no-cache")        // 兼容旧浏览器
+		// 设置文件大小（如果可能）
+		if stat, err := os.Stat(filePath); err == nil {
+			c.Header("Content-Length", fmt.Sprintf("%d", stat.Size()))
+		}
 		c.File(filePath)
 	})
 
