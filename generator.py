@@ -139,18 +139,22 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
 
     elements = []
     elements.append(Paragraph("准考证", styles["Title"]))
-    elements.append(Spacer(1, 1 * cm))
 
     # 第一部分：考生信息
     info_elements = []
 
-    # 添加config字段
+    # 添加考试名称（独立段落）
     if config.get("exam_name"):
-        info_elements.append(
-            Paragraph(f"<b>考试名称:</b> {config['exam_name']}", styles["Normal"])
+        exam_name_style = ParagraphStyle(
+            "ExamNameStyle",
+            parent=styles["Title"],
+            alignment=1,  # 1表示居中对齐
+            fontSize=16,
+            spaceAfter=0.5 * cm,
         )
-        info_elements.append(Spacer(1, 0.5 * cm))
+        elements.append(Paragraph(f"{config['exam_name']}", exam_name_style))
 
+    # 添加其他信息到表格
     if config.get("exam_location"):
         info_elements.append(
             Paragraph(f"<b>考试地点:</b> {config['exam_location']}", styles["Normal"])
@@ -206,7 +210,7 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
         TableStyle(
             [
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),  # 设置所有单元格内容居中
                 ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#4a86e8")),
                 ("PADDING", (0, 0), (-1, -1), 16),
                 ("ROUNDEDCORNERS", [4, 4, 4, 4]),
@@ -223,7 +227,9 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
         exam_info.append([schedule["subject"], schedule["time"]])
     exam_info.append(["", ""])
 
-    part2_table = Table(exam_info, colWidths=[4 * cm, 10 * cm], rowHeights=1 * cm)
+    # 设置行高，最后一行高度为0.5cm
+    row_heights = [1 * cm] * (len(exam_info) - 1) + [0.2 * cm]
+    part2_table = Table(exam_info, colWidths=[4 * cm, 10 * cm], rowHeights=row_heights)
     part2_table.setStyle(
         TableStyle(
             [
@@ -231,7 +237,7 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
                 ("FONTSIZE", (0, 0), (-1, -1), 14),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#dddddd")),
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
-                ("ALIGN", (0, 0), (-1, 0), "CENTER"),  # 科目列居中对齐
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),  # 所有单元格内容居中对齐
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),  # 所有单元格上下居中对齐
                 ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#4a86e8")),
                 ("PADDING", (0, 0), (-1, -1), 14),
@@ -280,10 +286,10 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
     for e in elements:
         wrapped = e.wrap(doc.width, doc.height)
         content_height += wrapped[1] if wrapped else 0
-    
+
     if content_height > doc.height:
         print(f"\033[1;33m警告：考生 {student['name']} (身份证号: {student['id']}) 的准考证内容过长（{content_height:.1f}点），可能无法在一页内完整显示。建议减少内容或调整格式。\033[0m")
-    
+
     doc.build(elements)
 
 
