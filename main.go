@@ -26,9 +26,10 @@ type QueryRequest struct {
 
 // 令牌结构
 type DownloadToken struct {
-	Token    string
-	FilePath string
-	Expire   time.Time
+	Token      string
+	FilePath   string
+	Expire     time.Time
+	Downloaded bool // 标记是否已下载
 }
 
 // 查询响应
@@ -149,7 +150,7 @@ func main() {
 		c.Header("Content-Disposition", `attachment; filename="`+fileName+`"; filename*=UTF-8''`+url.PathEscape(fileName))
 		c.Header("Content-Type", "application/pdf")
 		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("Cache-Control", "no-store")  // 防止缓存
+		c.Header("Cache-Control", "no-store") // 防止缓存
 		c.Header("Pragma", "no-cache")        // 兼容旧浏览器
 		// 设置文件大小（如果可能）
 		if stat, err := os.Stat(filePath); err == nil {
@@ -198,13 +199,13 @@ func findAdmitCard(id, name string) (string, error) {
 
 // 启动定时清理任务
 func startCleanupTask() {
-	cleanupTicker = time.NewTicker(30 * time.Minute)
+	cleanupTicker = time.NewTicker(1 * time.Minute)
 	go func() {
 		for range cleanupTicker.C {
-			// 清理过期令牌
+			// 清理过期或已下载的令牌
 			tokenStore.Range(func(key, value interface{}) bool {
 				token := value.(DownloadToken)
-				if time.Now().After(token.Expire) {
+				if time.Now().After(token.Expire) || token.Downloaded {
 					tokenStore.Delete(key)
 				}
 				return true
@@ -245,9 +246,10 @@ func generateToken(filePath string) string {
 	defer tokenMutex.Unlock()
 
 	tokenStore.Store(token, DownloadToken{
-		Token:    token,
-		FilePath: filePath,
-		Expire:   expire,
+		Token:      token,
+		FilePath:   filePath,
+		Expire:     expire,
+		Downloaded: false,
 	})
 
 	return token
@@ -291,8 +293,9 @@ func validateToken(token, filePath string) bool {
 		return false
 	}
 
-	// 验证通过后删除令牌(一次性使用)
-	tokenStore.Delete(token)
+	// 标记为已下载(不立即删除，等待清理任务处理)
+	dt.Downloaded = true
+	tokenStore.Store(token, dt)
 	fmt.Printf("验证成功: 令牌 %s 用于文件 %s\n", token, filePath)
 	return true
 }
