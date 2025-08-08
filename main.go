@@ -30,6 +30,7 @@ type DownloadToken struct {
 	FilePath   string
 	Expire     time.Time
 	Downloaded bool // 标记是否已下载
+	UseCount   int  // 使用次数计数器
 }
 
 // 查询响应
@@ -293,9 +294,20 @@ func validateToken(token, filePath string) bool {
 		return false
 	}
 
+	// 增加使用次数
+	dt.UseCount++
+	
 	// 标记为已下载(不立即删除，等待清理任务处理)
-	dt.Downloaded = true
+	if dt.UseCount >= 10 {
+		dt.Downloaded = true
+	}
 	tokenStore.Store(token, dt)
+	
+	// 检查使用次数
+	if dt.UseCount >= 10 {
+		fmt.Printf("验证失败: 令牌 %s 已达到最大使用次数(10次)\n", token)
+		return false
+	}
 	fmt.Printf("验证成功: 令牌 %s 用于文件 %s\n", token, filePath)
 	return true
 }
