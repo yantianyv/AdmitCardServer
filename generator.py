@@ -111,7 +111,7 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
             name="Chinese",
             fontName="WenQuanYi",
             fontSize=14,
-            leading=16,
+            leading=20,
             spaceBefore=6,
             spaceAfter=6,
         )
@@ -235,9 +235,15 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
 
     # 第三部分：注意事项
     notes_elements = [Paragraph("注意事项：", styles["Heading2"])]
-    for note in config["exam_notes"]:
-        notes_elements.append(Paragraph(note, styles["Normal"]))
-        notes_elements.append(Spacer(1, 0.5 * cm))
+    for index, note in enumerate(config["exam_notes"], 1):
+        note_style = ParagraphStyle(
+            "NoteStyle",
+            parent=styles["Normal"],
+            leading=18,  # 行高
+            leftIndent=24,  # 整体左缩进（单位：点）
+            firstLineIndent=-12,  # 首行缩进（负值表示向左突出）
+        )
+        notes_elements.append(Paragraph(f"<b>{index}.</b> {note}", note_style))
 
     part3_table = Table([[notes_elements]], colWidths=[14 * cm])
     part3_table.setStyle(
