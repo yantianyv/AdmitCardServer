@@ -21,6 +21,38 @@ default_config = {
     "exam_notes": ["注意事项"],
 }
 
+# 全局缓存字体和样式
+_font_registered = False
+_styles_cache = None
+
+def _init_global_styles():
+    global _font_registered, _styles_cache
+    if not _font_registered:
+        pdfmetrics.registerFont(TTFont("WenQuanYi", "fonts/wqy-microhei.ttc"))
+        _font_registered = True
+    
+    if _styles_cache is None:
+        styles = getSampleStyleSheet()
+        styles["Title"].fontName = "WenQuanYi"
+        styles["Title"].fontSize = 24
+        styles["Title"].textColor = colors.HexColor("#333333")
+        styles["Heading1"].fontName = "WenQuanYi"
+        styles["Heading2"].fontName = "WenQuanYi"
+        styles["Normal"].fontName = "WenQuanYi"
+        styles["Normal"].fontSize = 14
+        styles.add(
+            ParagraphStyle(
+                name="Chinese",
+                fontName="WenQuanYi",
+                fontSize=14,
+                leading=20,
+                spaceBefore=6,
+                spaceAfter=6,
+            )
+        )
+        _styles_cache = styles
+    return _styles_cache
+
 
 # 定义一个Flowable类，用于绘制带有文本的矩形框
 class PhotoBox(Flowable):
@@ -94,36 +126,15 @@ def read_excel_data(excel_path):
 
 # 生成准考证
 def generate_admit_card(student, config, output_dir="AdmitCards"):
-    pdfmetrics.registerFont(TTFont("WenQuanYi", "fonts/wqy-microhei.ttc"))
-
-    styles = getSampleStyleSheet()
-    # Only modify the styles we actually use
-    styles["Title"].fontName = "WenQuanYi"
-    styles["Title"].fontSize = 24
-    styles["Title"].textColor = colors.HexColor("#333333")
-    styles["Heading1"].fontName = "WenQuanYi"
-    styles["Heading2"].fontName = "WenQuanYi"
-    styles["Normal"].fontName = "WenQuanYi"
-    styles["Normal"].fontSize = 14
-    # Add Chinese style for exam notes
-    styles.add(
-        ParagraphStyle(
-            name="Chinese",
-            fontName="WenQuanYi",
-            fontSize=14,
-            leading=20,
-            spaceBefore=6,
-            spaceAfter=6,
-        )
-    )
+    styles = _init_global_styles()
     filename = f"{student['id']}-{student['name']}.pdf"
     doc = SimpleDocTemplate(
         os.path.join(output_dir, filename),
         pagesize=A4,
-        leftMargin=2 * cm,
-        rightMargin=2 * cm,
-        topMargin=2 * cm,
-        bottomMargin=2 * cm,
+        leftMargin=1 * cm,
+        rightMargin=1 * cm,
+        topMargin=1 * cm,
+        bottomMargin=1 * cm,
     )
 
     elements = []
@@ -264,6 +275,15 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
     doc.borderColor = None
     doc.borderStyle = None
 
+    # 检查内容高度是否超过一页
+    content_height = 0
+    for e in elements:
+        wrapped = e.wrap(doc.width, doc.height)
+        content_height += wrapped[1] if wrapped else 0
+    
+    if content_height > doc.height:
+        print(f"\033[1;33m警告：考生 {student['name']} (身份证号: {student['id']}) 的准考证内容过长（{content_height:.1f}点），可能无法在一页内完整显示。建议减少内容或调整格式。\033[0m")
+    
     doc.build(elements)
 
 
