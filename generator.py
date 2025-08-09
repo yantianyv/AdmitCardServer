@@ -15,7 +15,7 @@ from reportlab.platypus.flowables import Flowable, HRFlowable
 # 默认配置模板
 default_config = {
     "exam_name": "默认考试",
-    "settings": {"render_photo_frame": True, "auto_extend": True},
+    "settings": {"render_photo_frame": False, "auto_extend": False},
     "exam_schedule": [{"subject": "科目", "time": "时间"}],
     "exam_notes": ["注意事项"],
 }
