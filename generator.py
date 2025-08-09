@@ -15,7 +15,7 @@ from reportlab.platypus.flowables import Flowable, HRFlowable
 # 默认配置模板
 default_config = {
     "exam_name": "默认考试",
-    "settings": {"render_photo_frame": True},
+    "settings": {"render_photo_frame": True, "auto_extend": True},
     "exam_schedule": [{"subject": "科目", "time": "时间"}],
     "exam_notes": ["注意事项"],
 }
@@ -244,7 +244,7 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
     elements.append(Spacer(1, 0.5 * cm))
 
     # 第三部分：注意事项
-    notes_elements = [Paragraph("注意事项：", styles["Heading1"])]
+    notes_elements = [Paragraph("注意事项：", styles["Heading2"])]
     for index, note in enumerate(config["exam_notes"], 1):
         note_style = ParagraphStyle(
             "NoteStyle",
@@ -254,17 +254,19 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
             firstLineIndent=-12,  # 首行缩进（负值表示向左突出）
         )
         notes_elements.append(Paragraph(f"<b>{index}.</b> {note}", note_style))
-        notes_elements.append(Spacer(1, 0.2 * cm))
 
-    # 动态计算已用高度
-    used_height = (
-        sum(e.wrap(doc.width, doc.height)[1] for e in elements) if elements else 0
-    )
-    remaining_height = max(0, (27.7 - 2) * cm - used_height)  # 确保不小于0
+    # 根据配置决定是否自动延伸高度
+    if config["settings"].get("auto_extend", True):
+        # 动态计算已用高度
+        used_height = (
+            sum(e.wrap(doc.width, doc.height)[1] for e in elements) if elements else 0
+        )
+        remaining_height = max(0, (27.7 - 2) * cm - used_height)  # 确保不小于0
+        row_heights = [remaining_height]
+    else:
+        row_heights = None  # 使用默认高度
 
-    part3_table = Table(
-        [[notes_elements]], colWidths=[14 * cm], rowHeights=[remaining_height]
-    )
+    part3_table = Table([[notes_elements]], colWidths=[14 * cm], rowHeights=row_heights)
     part3_table.setStyle(
         TableStyle(
             [
