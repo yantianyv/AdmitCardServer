@@ -15,7 +15,6 @@ from reportlab.platypus.flowables import Flowable, HRFlowable
 # 默认配置模板
 default_config = {
     "exam_name": "默认考试",
-    "exam_location": "默认考试地点",
     "settings": {"render_photo_frame": True},
     "exam_schedule": [{"subject": "科目", "time": "时间"}],
     "exam_notes": ["注意事项"],
@@ -155,12 +154,6 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
     elements.append(Paragraph("准考证", styles["Title"]))
 
     # 添加其他信息到表格
-    if config.get("exam_location"):
-        info_elements.append(
-            Paragraph(f"<b>考试地点:</b> {config['exam_location']}", styles["Normal"])
-        )
-        info_elements.append(Spacer(1, 0.5 * cm))
-
     # 检查并添加学生基本信息
     if not student.get("name"):
         print(
@@ -251,7 +244,7 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
     elements.append(Spacer(1, 0.5 * cm))
 
     # 第三部分：注意事项
-    notes_elements = [Paragraph("注意事项：", styles["Heading2"])]
+    notes_elements = [Paragraph("注意事项：", styles["Heading1"])]
     for index, note in enumerate(config["exam_notes"], 1):
         note_style = ParagraphStyle(
             "NoteStyle",
@@ -261,14 +254,24 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
             firstLineIndent=-12,  # 首行缩进（负值表示向左突出）
         )
         notes_elements.append(Paragraph(f"<b>{index}.</b> {note}", note_style))
+        notes_elements.append(Spacer(1, 0.2 * cm))
 
-    part3_table = Table([[notes_elements]], colWidths=[14 * cm])
+    # 动态计算已用高度
+    used_height = (
+        sum(e.wrap(doc.width, doc.height)[1] for e in elements) if elements else 0
+    )
+    remaining_height = max(0, (27.7 - 2) * cm - used_height)  # 确保不小于0
+
+    part3_table = Table(
+        [[notes_elements]], colWidths=[14 * cm], rowHeights=[remaining_height]
+    )
     part3_table.setStyle(
         TableStyle(
             [
                 ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#4a86e8")),
                 ("PADDING", (0, 0), (-1, -1), 12),
                 ("ROUNDEDCORNERS", [4, 4, 4, 4]),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),  # 内容顶部对齐
             ]
         )
     )
@@ -336,8 +339,6 @@ def main():
         # 检查config字段
         if not config.get('exam_name'):
             print("\033[1;33m警告：考试名称为空，将隐藏该字段\033[0m")
-        if not config.get('exam_location'):
-            print("\033[1;33m警告：考试地点为空，将隐藏该字段\033[0m")
 
         # 检查是否有Excel文件参数
         if not hasattr(args, 'excel_file') or not args.excel_file:
