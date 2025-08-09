@@ -4,9 +4,32 @@ document.addEventListener('DOMContentLoaded', function() {
     const modal = document.getElementById('modal');
     const modalMessage = document.getElementById('modal-message');
     const modalClose = document.getElementById('modal-close');
+    const nameInput = document.getElementById('name');
+    const idInput = document.getElementById('id');
+    const nameDotBtn = document.getElementById('name-dot-btn');
+    const idXBtn = document.getElementById('id-x-btn');
     const spinner = document.createElement('div');
     spinner.className = 'spinner';
     form.appendChild(spinner);
+
+    // 添加按钮点击事件
+    nameDotBtn.addEventListener('click', function() {
+        console.log('Name dot button clicked');
+        nameInput.value += '·';
+        nameInput.focus();
+    });
+
+    idXBtn.addEventListener('click', function() {
+        console.log('ID X button clicked');
+        idInput.value += 'X';
+        idInput.focus();
+    });
+
+    // 调试信息
+    console.log('Buttons initialized:', {
+        nameDotBtn: nameDotBtn,
+        idXBtn: idXBtn
+    });
 
     // 显示弹窗
     function showModal(message) {

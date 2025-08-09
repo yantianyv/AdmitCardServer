@@ -34,12 +34,41 @@ label {
     font-weight: bold;
 }
 
+.input-container {
+    position: relative;
+    width: 100%;
+}
+
 input[type="text"] {
     width: 100%;
-    padding: 10px;
+    padding: 10px 50px 10px 10px;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 16px;
+    box-sizing: border-box;
+}
+
+.input-btn {
+    position: absolute;
+    right: 0;
+    top: 0;
+    height: 100%;
+    width: 40px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-left: 1px solid #2980b9;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.input-btn:hover {
+    background-color: #2980b9;
 }
 
 button {
@@ -51,6 +80,7 @@ button {
     cursor: pointer;
     font-size: 16px;
     width: 100%;
+    font-weight: bold;
 }
 
 button:hover {

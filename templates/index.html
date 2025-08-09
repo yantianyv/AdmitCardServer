@@ -12,11 +12,17 @@
         <form id="query-form">
             <div class="form-group">
                 <label for="name">学生姓名</label>
-                <input type="text" id="name" name="name" required>
+                <div class="input-container">
+                    <input type="text" id="name" name="name" required>
+                    <button type="button" class="input-btn" id="name-dot-btn">·</button>
+                </div>
             </div>
             <div class="form-group">
                 <label for="id">身份证号</label>
-                <input type="text" id="id" name="id" required>
+                <div class="input-container">
+                    <input type="text" id="id" name="id" required>
+                    <button type="button" class="input-btn" id="id-x-btn">X</button>
+                </div>
             </div>
             <button type="submit" id="query-btn">查询</button>
         </form>

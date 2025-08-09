@@ -109,7 +109,7 @@ func main() {
 		filePath, err := findAdmitCard(req.ID, req.Name)
 		if err != nil {
 			c.JSON(http.StatusOK, QueryResponse{
-				Message: fmt.Sprintf("未找到%s的准考证，请检查信息是否匹配。", req.Name),
+			Message: fmt.Sprintf("未找到%s的准考证，请检查信息是否匹配。", req.Name),
 			})
 			return
 		}
@@ -166,9 +166,6 @@ func main() {
 
 // 标准化姓名（处理少数民族姓名中的·）
 func normalizeName(name string) string {
-	if idx := strings.Index(name, "·"); idx != -1 {
-		return name[:idx] // 取·前部分
-	}
 	return name
 }
 
@@ -296,13 +293,13 @@ func validateToken(token, filePath string) bool {
 
 	// 增加使用次数
 	dt.UseCount++
-	
+
 	// 标记为已下载(不立即删除，等待清理任务处理)
 	if dt.UseCount >= 10 {
 		dt.Downloaded = true
 	}
 	tokenStore.Store(token, dt)
-	
+
 	// 检查使用次数
 	if dt.UseCount >= 10 {
 		fmt.Printf("验证失败: 令牌 %s 已达到最大使用次数(10次)\n", token)
