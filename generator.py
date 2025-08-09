@@ -138,7 +138,6 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
     )
 
     elements = []
-    elements.append(Paragraph("准考证", styles["Title"]))
 
     # 第一部分：考生信息
     info_elements = []
@@ -149,10 +148,11 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
             "ExamNameStyle",
             parent=styles["Title"],
             alignment=1,  # 1表示居中对齐
-            fontSize=16,
-            spaceAfter=0.5 * cm,
+            fontSize=18,
         )
         elements.append(Paragraph(f"{config['exam_name']}", exam_name_style))
+
+    elements.append(Paragraph("准考证", styles["Title"]))
 
     # 添加其他信息到表格
     if config.get("exam_location"):
