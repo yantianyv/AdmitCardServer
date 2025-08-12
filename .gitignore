@@ -1,3 +1,6 @@
+.* 
+!.gitignore
+
 *.xlsx
 *.xls
 *.csv
@@ -5,6 +8,3 @@
 *.pdf
 *.swp
 log
-
-.* 
-!.gitignore
