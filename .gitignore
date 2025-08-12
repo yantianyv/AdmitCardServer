@@ -1,6 +1,10 @@
-
 *.xlsx
 *.xls
+*.csv
 *.json
 *.pdf
+*.swp
 log
+
+.* 
+!.gitignore

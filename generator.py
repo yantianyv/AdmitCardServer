@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+import csv
 from openpyxl import load_workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -29,7 +30,7 @@ def _init_global_styles():
     if not _font_registered:
         pdfmetrics.registerFont(TTFont("WenQuanYi", "fonts/wqy-microhei.ttc"))
         _font_registered = True
-    
+
     if _styles_cache is None:
         styles = getSampleStyleSheet()
         styles["Title"].fontName = "WenQuanYi"
@@ -53,7 +54,6 @@ def _init_global_styles():
     return _styles_cache
 
 
-# 定义一个Flowable类，用于绘制带有文本的矩形框
 class PhotoBox(Flowable):
     def __init__(self, width, height, text=""):
         Flowable.__init__(self)
@@ -61,7 +61,6 @@ class PhotoBox(Flowable):
         self.height = height
         self.text = text
 
-    # 绘制矩形框和文本
     def draw(self):
         self.canv.setDash(2, 2)
         self.canv.rect(0, 0, self.width, self.height)
@@ -73,19 +72,15 @@ class PhotoBox(Flowable):
         )
 
 
-# 加载配置文件
 def load_config(config_name="default"):
     config_path = os.path.join("config", f"{config_name}.json")
 
     global default_config
 
     if not os.path.exists(config_path):
-        # 创建配置文件目录
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
-        # 生成默认配置文件
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(default_config, f, indent=2, ensure_ascii=False)
-        # 用黄色字体输出警告
         print("\033[1;33m警告：配置文件不存在，已生成默认配置文件。\033[0m")
         return default_config
 
@@ -93,37 +88,71 @@ def load_config(config_name="default"):
         return json.load(f)
 
 
-# 验证Excel文件结构
-def validate_excel_structure(ws):
-    if (
-        ws.cell(row=1, column=1).value != "姓名"
-        or ws.cell(row=1, column=2).value != "身份证号"
-    ):
-        raise ValueError("Excel文件第一列应为'姓名'，第二列应为'身份证号'")
+def validate_csv_structure(headers):
+    if headers[0] != "姓名" or headers[1] != "身份证号":
+        raise ValueError("CSV文件第一列应为'姓名'，第二列应为'身份证号'")
 
 
-# 读取Excel文件中的数据
-def read_excel_data(excel_path):
-    wb = load_workbook(excel_path)
-    ws = wb.active
-    validate_excel_structure(ws)
-
-    # 获取表头
-    headers = [cell.value for cell in ws[1]]
-
-    data = []
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        student = {
-            "name": row[0],
-            "id": row[1],
-            "fields": row[2:],
-            "field_headers": headers[2:],  # 保存额外字段的表头
-        }
-        data.append(student)
+def read_csv_data(csv_path):
+    with open(csv_path, 'r', encoding='utf-8-sig') as f:
+        reader = csv.reader(f)
+        headers = next(reader)
+        validate_csv_structure(headers)
+        
+        data = []
+        for row in reader:
+            student = {
+                "name": row[0],
+                "id": row[1],
+                "fields": row[2:],
+                "field_headers": headers[2:],
+            }
+            data.append(student)
     return data
 
 
-# 生成准考证
+def convert_excel_to_csv(excel_path):
+    """将Excel文件转换为CSV，如果目标文件已存在则询问用户"""
+    csv_path = os.path.splitext(excel_path)[0] + '.csv'
+    
+    # 检查CSV文件是否已存在
+    if os.path.exists(csv_path):
+        print(f"\n发现已存在的CSV文件: {csv_path}")
+        while True:
+            choice = input("是否覆盖现有文件？(y/n): ").strip().lower()
+            if choice == 'y':
+                break
+            elif choice == 'n':
+                new_name = input("请输入新的文件名(不带扩展名): ").strip()
+                csv_path = os.path.join(os.path.dirname(excel_path), f"{new_name}.csv")
+                if os.path.exists(csv_path):
+                    print("该文件名也已存在，请重新选择")
+                    continue
+                break
+            else:
+                print("请输入y或n")
+                continue
+
+    wb = load_workbook(excel_path)
+    ws = wb.active
+    
+    with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f)
+        for row in ws.iter_rows(values_only=True):
+            writer.writerow(row)
+    
+    print(f"已生成CSV文件: {csv_path}")
+    return csv_path
+
+
+def read_student_data(input_file):
+    if input_file.lower().endswith(('.xls', '.xlsx')):
+        print(f"检测到Excel文件 {input_file}，正在转换为CSV格式...")
+        input_file = convert_excel_to_csv(input_file)
+    
+    return read_csv_data(input_file)
+
+
 def generate_admit_card(student, config, output_dir="AdmitCards"):
     styles = _init_global_styles()
     filename = f"{student['id']}-{student['name']}.pdf"
@@ -138,59 +167,38 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
 
     elements = []
 
-    # 第一部分：考生信息
-    info_elements = []
-
-    # 添加考试名称（独立段落）
     if config.get("exam_name"):
         exam_name_style = ParagraphStyle(
             "ExamNameStyle",
             parent=styles["Title"],
-            alignment=1,  # 1表示居中对齐
+            alignment=1,
             fontSize=18,
         )
         elements.append(Paragraph(f"{config['exam_name']}", exam_name_style))
 
     elements.append(Paragraph("准考证", styles["Title"]))
 
-    # 添加其他信息到表格
-    # 检查并添加学生基本信息
+    info_elements = []
     if not student.get("name"):
-        print(
-            f"\033[1;33m警告：身份证号 {student['id']} 的姓名为空，已隐藏该字段\033[0m"
-        )
+        print(f"\033[1;33m警告：身份证号 {student['id']} 的姓名为空，已隐藏该字段\033[0m")
     else:
-        info_elements.append(
-            Paragraph(f"<b>姓名:</b> {student['name']}", styles["Normal"])
-        )
+        info_elements.append(Paragraph(f"<b>姓名:</b> {student['name']}", styles["Normal"]))
         info_elements.append(Spacer(1, 0.5 * cm))
 
     if not student.get("id"):
-        print(
-            f"\033[1;33m警告：考生 {student['name']} 的身份证号为空，已隐藏该字段\033[0m"
-        )
+        print(f"\033[1;33m警告：考生 {student['name']} 的身份证号为空，已隐藏该字段\033[0m")
     else:
-        info_elements.append(
-            Paragraph(f"<b>身份证号:</b> {student['id']}", styles["Normal"])
-        )
+        info_elements.append(Paragraph(f"<b>身份证号:</b> {student['id']}", styles["Normal"]))
         info_elements.append(Spacer(1, 0.5 * cm))
 
-    # 添加额外字段
     for header, field in zip(student.get("field_headers", []), student["fields"]):
         if not field:
-            print(
-                f"\033[1;33m警告：考生 {student['name']} 的字段 '{header}' 为空，已隐藏该字段\033[0m"
-            )
+            print(f"\033[1;33m警告：考生 {student['name']} 的字段 '{header}' 为空，已隐藏该字段\033[0m")
         else:
-            info_elements.append(
-                Paragraph(f"<b>{header}:</b> {field}", styles["Normal"])
-            )
-            info_elements.append(Spacer(1, 0.5 * cm))  # 增加上下间距
+            info_elements.append(Paragraph(f"<b>{header}:</b> {field}", styles["Normal"]))
+            info_elements.append(Spacer(1, 0.5 * cm))
 
-    # 获取照片框渲染设置
     render_photo = config["settings"]["render_photo_frame"]
-
-    # 根据设置构建表格
     if render_photo:
         part1_table = Table(
             [[info_elements, PhotoBox(2.5 * cm, 3.5 * cm, "一寸照片粘贴处"), None]],
@@ -203,7 +211,7 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
         TableStyle(
             [
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),  # 设置所有单元格内容居中
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                 ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#4a86e8")),
                 ("PADDING", (0, 0), (-1, -1), 16),
                 ("ROUNDEDCORNERS", [4, 4, 4, 4]),
@@ -214,13 +222,11 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
     elements.append(part1_table)
     elements.append(Spacer(1, 0.5 * cm))
 
-    # 第二部分：考试时间表
     exam_info = [["科目", "考试时间"]]
     for schedule in config["exam_schedule"]:
         exam_info.append([schedule["subject"], schedule["time"]])
     exam_info.append(["", ""])
 
-    # 设置行高，最后一行高度为0.5cm
     row_heights = [1 * cm] * (len(exam_info) - 1) + [0.2 * cm]
     part2_table = Table(exam_info, colWidths=[4 * cm, 10 * cm], rowHeights=row_heights)
     part2_table.setStyle(
@@ -230,8 +236,8 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
                 ("FONTSIZE", (0, 0), (-1, -1), 14),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#dddddd")),
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),  # 所有单元格内容居中对齐
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),  # 所有单元格上下居中对齐
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#4a86e8")),
                 ("PADDING", (0, 0), (-1, -1), 14),
                 ("ROUNDEDCORNERS", [4, 4, 4, 4]),
@@ -243,28 +249,25 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
     elements.append(part2_table)
     elements.append(Spacer(1, 0.5 * cm))
 
-    # 第三部分：注意事项
     notes_elements = [Paragraph("注意事项：", styles["Heading2"])]
     for index, note in enumerate(config["exam_notes"], 1):
         note_style = ParagraphStyle(
             "NoteStyle",
             parent=styles["Normal"],
-            leading=18,  # 行高
-            leftIndent=24,  # 整体左缩进（单位：点）
-            firstLineIndent=-12,  # 首行缩进（负值表示向左突出）
+            leading=18,
+            leftIndent=24,
+            firstLineIndent=-12,
         )
         notes_elements.append(Paragraph(f"<b>{index}.</b> {note}", note_style))
 
-    # 根据配置决定是否自动延伸高度
     if config["settings"].get("auto_extend", True):
-        # 动态计算已用高度
         used_height = (
             sum(e.wrap(doc.width, doc.height)[1] for e in elements) if elements else 0
         )
-        remaining_height = max(0, (27.7 - 2) * cm - used_height)  # 确保不小于0
+        remaining_height = max(0, (27.7 - 2) * cm - used_height)
         row_heights = [remaining_height]
     else:
-        row_heights = None  # 使用默认高度
+        row_heights = None
 
     part3_table = Table([[notes_elements]], colWidths=[14 * cm], rowHeights=row_heights)
     part3_table.setStyle(
@@ -273,20 +276,18 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
                 ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#4a86e8")),
                 ("PADDING", (0, 0), (-1, -1), 12),
                 ("ROUNDEDCORNERS", [4, 4, 4, 4]),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),  # 内容顶部对齐
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ]
         )
     )
 
     elements.append(part3_table)
 
-    # 移除文档整体边框设置
     doc.border = 0
     doc.borderPadding = 0
     doc.borderColor = None
     doc.borderStyle = None
 
-    # 检查内容高度是否超过一页
     content_height = 0
     for e in elements:
         wrapped = e.wrap(doc.width, doc.height)
@@ -298,63 +299,45 @@ def generate_admit_card(student, config, output_dir="AdmitCards"):
     doc.build(elements)
 
 
-# 主函数
 def main():
-    # 确保必要目录存在
     os.makedirs("config", exist_ok=True)
     os.makedirs("AdmitCards", exist_ok=True)
 
     if not os.path.exists(os.path.join("config", "default.json")):
-        # 创建配置文件目录
-        os.makedirs(
-            os.path.dirname(os.path.join("config", "default.json")), exist_ok=True
-        )
-        # 生成默认配置文件
+        os.makedirs(os.path.dirname(os.path.join("config", "default.json")), exist_ok=True)
         with open(os.path.join("config", "default.json"), "w", encoding="utf-8") as f:
             json.dump(default_config, f, indent=2, ensure_ascii=False)
-        # 用黄色字体输出警告
         print("\033[1;33m初次使用，已帮您生成默认配置文件，请修改后再次启动\033[0m")
         return default_config
 
-    # 自定义错误处理类
     class CustomArgumentParser(argparse.ArgumentParser):
         def error(self, message):
             if "the following arguments are required" in message:
-                print("请指定考生信息Excel文件路径")
+                print("请指定考生信息文件路径(CSV/XLS/XLSX)")
                 self.exit(2)
             else:
                 super().error(message)
 
     parser = CustomArgumentParser(description="准考证生成器", add_help=False)
-    parser.add_argument("excel_file", help="考生信息Excel文件路径")
-    parser.add_argument(
-        "-c", "--config", default="default", help="配置文件名（不带.json扩展名）"
-    )
+    parser.add_argument("input_file", help="考生信息文件路径(CSV/XLS/XLSX)")
+    parser.add_argument("-c", "--config", default="default", help="配置文件名（不带.json扩展名）")
     parser.add_argument("-h", "--help", action="help", help="显示帮助信息并退出")
 
     args = parser.parse_args()
 
     try:
-        # 加载配置（会自动创建默认配置）
         config = load_config(args.config)
 
-        # 检查config字段
         if not config.get('exam_name'):
             print("\033[1;33m警告：考试名称为空，将隐藏该字段\033[0m")
 
-        # 检查是否有Excel文件参数
-        if not hasattr(args, 'excel_file') or not args.excel_file:
-            print("请指定考生信息Excel文件路径")
-            return
-
-        students = read_excel_data(args.excel_file)
+        students = read_student_data(args.input_file)
         total = len(students)
         print(f"开始生成{total}份准考证...")
 
         for i, student in enumerate(students, 1):
             generate_admit_card(student, config)
             progress = int(i / total * 100)
-            # 生成字符进度条 (20个字符长度)
             progress_bar = "#" * (progress // 5) + "_" * (20 - progress // 5)
             sys.stdout.write(f"\r进度: {progress_bar} {progress}% ({i}/{total})")
             sys.stdout.flush()
@@ -368,3 +351,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
